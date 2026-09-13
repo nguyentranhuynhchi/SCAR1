@@ -21,7 +21,7 @@ from training.models.modules.cmspa import CMSPA_Fusion
 from training.models.modules.decoder import DecoderCup, SegmentationHead
 from training.models.modules.fusion import ConcatFusion, CrossAttention_Fusion, Fusion_Embed
 from training.models.modules.sspanet import SSPANet_Block
-
+from training.models.modules.m2_plus import M2Plus_Fusion
 
 def get_r50_b16_config() -> ConfigDict:
     """Production configuration for R50-B16 based CMSPA-Net."""
@@ -46,7 +46,7 @@ def get_r50_b16_config() -> ConfigDict:
 
 def get_config(ablation: str = "M3") -> ConfigDict:
     """Return a fresh production configuration."""
-    if ablation.upper() not in {"M0", "M1", "M2", "M3"}:
+    if ablation.upper() not in {"M0", "M1", "M2", "M3", "M2-PLUS"}:
         raise ValueError(f"Unknown ablation {ablation!r}; expected M0, M1, M2 or M3")
     config = get_r50_b16_config()
     config.ablation = ablation.upper()
@@ -143,7 +143,7 @@ class CMSPANet(nn.Module):
                 self.config[key] = value
 
         self.ablation = (ablation or self.config.get("ablation", "M3")).upper()
-        if self.ablation not in {"M0", "M1", "M2", "M3"}:
+        if self.ablation not in {"M0", "M1", "M2", "M3", "M2-PLUS"}:
             raise ValueError(f"Unknown ablation: {self.ablation!r}")
         self.config.ablation = self.ablation
 
@@ -175,6 +175,10 @@ class CMSPANet(nn.Module):
 
         if self.ablation == "M3":
             self.cross_fusion = CMSPA_Fusion(channels, self.config.fused_channels)
+        elif self.ablation == "M2-PLUS":
+            self.cross_fusion = M2Plus_Fusion(
+                channels, self.config.fused_channels, self.config.cross_attention_heads
+            )
         elif self.ablation == "M2":
             self.cross_fusion = CrossAttention_Fusion(
                 channels, self.config.fused_channels, self.config.cross_attention_heads

@@ -5,7 +5,7 @@ from functools import partial
 from typing import Callable
 
 from torch import nn
-
+from training.models.modules.m2_plus import M2Plus_Fusion
 from training.models.backbones.resnet_v2 import PreActBottleneck, ResNetV2, StdConv2d
 from training.models.cmspa_net import (
     CONFIGS,
@@ -79,4 +79,5 @@ __all__ = [
     "SegmentationHead",
     "MODEL_REGISTRY",
     "build_model",
+    "M2Plus_Fusion",
 ]
