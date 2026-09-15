@@ -27,6 +27,7 @@ from training.dataset.myops_dataset import (
 )
 from training.loss.losses import SegmentationLoss
 from training.loss.dpf_loss import DPFLoss
+from training.loss.m2_pro_loss import M2ProLoss
 from training.metrics.confusion_meter import ConfusionMeter
 from training.dataset.sampler import build_rare_class_sampler
 from training.predict import predict_volume
@@ -243,9 +244,10 @@ def run_epoch(
                 logits = output["logits"] if isinstance(output, dict) else output
             if not torch.stack([torch.isfinite(v) for v in losses.values()]).all():
                 raise FloatingPointError(f"Non-finite loss at batch {batch_index}: {batch.get('case_name')}")
-            sums += torch.stack([losses[key].detach() for key in ("loss", "ce", "dice_loss")]).double() * batch_count
+            dice_val = losses.get("dice_loss", losses.get("dice"))
+            sums += torch.stack([losses["loss"].detach(), losses["ce"].detach(), dice_val.detach()]).double() * batch_count
             for key, value in losses.items():
-                if key not in ("loss", "ce", "dice_loss"):
+                if key not in ("loss", "ce", "dice", "dice_loss"):
                     extra_sums[key] = extra_sums.get(key, 0) + value.detach().double() * batch_count
             sample_count += batch_count
             meter.update(logits.detach().argmax(1), target)
@@ -430,7 +432,14 @@ def trainer_Myops(args, model, snapshot_path):
         split_dir, "val_vol", label_order=args.label_order,
     )
     model.to(device)
-    loss_class = DPFLoss if model.config.get("architecture") == "m3_dpf" else SegmentationLoss
+    arch = str(model.config.get("architecture", "")).lower()
+    ablation = str(getattr(args, "ablation", model.config.get("ablation", ""))).upper()
+    if arch == "m3_dpf":
+        loss_class = DPFLoss
+    elif arch in ("m2_pro", "m2_pro_net", "m2pro") or ablation == "M2-PRO":
+        loss_class = M2ProLoss
+    else:
+        loss_class = SegmentationLoss
     criterion = loss_class(ce_weight=args.ce_weight, dice_weight=args.dice_weight)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.base_lr, weight_decay=args.weight_decay, foreach=False)
     total_updates = args.max_epochs * math.ceil(len(trainloader) / args.accum_steps)

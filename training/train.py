@@ -65,7 +65,11 @@ def build_parser():
     parser.add_argument("--sampler", choices=("none", "rare"), default="none")
     parser.add_argument("--rare-boost", type=float, default=2.0)
     parser.add_argument("--foreground-boost", type=float, default=1.3)
-    parser.add_argument("--ablation", choices=["M0", "M1", "M2", "M3", "M2-Plus", "M2-PLUS"], default="M3")
+    parser.add_argument(
+        "--ablation",
+        choices=["M0", "M1", "M2", "M3", "M2-Plus", "M2-PLUS", "M2-Pro", "M2-PRO"],
+        default="M3",
+    )
     parser.add_argument("--epochs", "--max_epochs", dest="max_epochs", type=int, default=300)
     parser.add_argument(
         "--batch-size",
@@ -215,6 +219,8 @@ def main(argv=None):
     config.n_classes = 4
     if "architecture" in section:
         config.architecture = section["architecture"]
+    elif args.ablation.upper() in ("M2-PRO", "M2_PRO"):
+        config.architecture = "m2_pro"
     torch.set_num_threads(args.cpu_threads)
     seed_everything(args.seed, args.deterministic)
     model = model_from_config(config, img_size=args.img_size, num_classes=4, ablation=args.ablation)

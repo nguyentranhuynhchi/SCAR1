@@ -23,8 +23,21 @@ from training.models.modules.decoder import DecoderCup, SegmentationHead
 from training.models.modules.fusion import ConcatFusion, CrossAttention_Fusion, Fusion_Embed
 from training.models.modules.sspanet import SSPANet_Block
 from training.models.m3_dpf import M3DPF
+from training.models.m2_pro import M2ProNet
+from training.models.modules.m2_pro import (
+    AGSA_Block,
+    ChannelSEModule,
+    DecoupledBottleneckFusion,
+    DeepSupervisionAuxHead,
+    DFE_Block,
+    M2ProOutput,
+    SoftMyoGate,
+)
 
 MODEL_REGISTRY: dict[str, Callable[..., nn.Module]] = {
+    "m2_pro": M2ProNet,
+    "m2_pro_net": M2ProNet,
+    "m2pro": M2ProNet,
     "m3_dpf": M3DPF,
     "cmspa_net": CMSPANet,
     "cmspa": CMSPANet,
@@ -80,4 +93,12 @@ __all__ = [
     "MODEL_REGISTRY",
     "build_model",
     "M2Plus_Fusion",
+    "M2ProNet",
+    "AGSA_Block",
+    "ChannelSEModule",
+    "DecoupledBottleneckFusion",
+    "DeepSupervisionAuxHead",
+    "DFE_Block",
+    "M2ProOutput",
+    "SoftMyoGate",
 ]
