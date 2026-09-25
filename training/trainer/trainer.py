@@ -433,7 +433,7 @@ def trainer_Myops(args, model, snapshot_path):
         split_dir, "val_vol", label_order=args.label_order,
     )
     model.to(device)
-        arch = str(model.config.get("architecture", "")).lower()
+    arch = str(model.config.get("architecture", "")).lower()
     ablation = str(getattr(args, "ablation", model.config.get("ablation", ""))).upper()
     if arch in ("m2_plus_plus", "m2_plusplus", "m2++") or ablation in ("M2-PLUS-PLUS", "M2++"):
         loss_class = M2PlusPlusLoss
