@@ -1,4 +1,4 @@
-"""M2-Plus-Plus Modules: Dynamic ROI Zoom-in, Deformable Cross-Modal Alignment,
+"""M2-Plus-Plus Modules: Anatomy Mask Gating, Deformable Cross-Modal Alignment,
 and Hierarchical Residual Decoupled Heads.
 """
 from __future__ import annotations
@@ -8,86 +8,21 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class DynamicROIExtractor(nn.Module):
-    """Stage 1: Differentiable Coarse Myocardium Locator & Dynamic ROI Cropper/Zoomer."""
-
-    def __init__(self, in_channels: int = 64, margin: float = 0.20):
+class SoftMyoGate(nn.Module):
+    """Generates a soft anatomical mask from CINE to gate LGE/T2w features."""
+    def __init__(self, channels: int):
         super().__init__()
-        self.margin = margin
-        self.coarse_detector = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(32),
-            nn.GELU(),
-            nn.Conv2d(32, 1, kernel_size=1),
+        self.gate_net = nn.Sequential(
+            nn.Conv2d(channels, channels // 2, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(channels // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channels // 2, 1, kernel_size=1),
+            nn.Sigmoid()
         )
 
-    def forward(
-        self,
-        cine_feat: torch.Tensor,
-        images: list[torch.Tensor],
-    ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
-        """Detect coarse myocardium from CINE features and crop/zoom input images."""
-        batch_size, _, orig_h, orig_w = images[0].shape
-        coarse_logits = self.coarse_detector(cine_feat)
-        coarse_prob = torch.sigmoid(coarse_logits)
-
-        grids = []
-        inv_grids = []
-        for b in range(batch_size):
-            prob = coarse_prob[b, 0]
-            mask = prob > 0.35
-            coords = torch.nonzero(mask)
-
-            if coords.shape[0] < 16:
-                # Fallback to centered conservative crop if no clear myocardium
-                y_min, y_max = 0.15 * orig_h, 0.85 * orig_h
-                x_min, x_max = 0.15 * orig_w, 0.85 * orig_w
-            else:
-                y_min, y_max = coords[:, 0].min().float(), coords[:, 0].max().float()
-                x_min, x_max = coords[:, 1].min().float(), coords[:, 1].max().float()
-
-            h_box = max(y_max - y_min, 16.0)
-            w_box = max(x_max - x_min, 16.0)
-
-            # Apply safe margin padding
-            pad_y = h_box * self.margin
-            pad_x = w_box * self.margin
-            y1 = max(0.0, y_min - pad_y)
-            y2 = min(float(orig_h), y_max + pad_y)
-            x1 = max(0.0, x_min - pad_x)
-            x2 = min(float(orig_w), x_max + pad_x)
-
-            # Normalized coordinates [-1, 1]
-            theta = torch.tensor([
-                [(x2 - x1) / orig_w, 0.0, (x1 + x2) / orig_w - 1.0],
-                [0.0, (y2 - y1) / orig_h, (y1 + y2) / orig_h - 1.0],
-            ], dtype=cine_feat.dtype, device=cine_feat.device).unsqueeze(0)
-
-            grid = F.affine_grid(theta, torch.Size([1, 1, orig_h, orig_w]), align_corners=False)
-            grids.append(grid)
-
-            # Inverse transform to map fine predictions back to original coordinates
-            scale_x = orig_w / max(x2 - x1, 1e-4)
-            scale_y = orig_h / max(y2 - y1, 1e-4)
-            trans_x = -((x1 + x2) / orig_w - 1.0) * scale_x
-            trans_y = -((y1 + y2) / orig_h - 1.0) * scale_y
-
-            theta_inv = torch.tensor([
-                [scale_x, 0.0, trans_x],
-                [0.0, scale_y, trans_y],
-            ], dtype=cine_feat.dtype, device=cine_feat.device).unsqueeze(0)
-
-            inv_grid = F.affine_grid(theta_inv, torch.Size([1, 1, orig_h, orig_w]), align_corners=False)
-            inv_grids.append(inv_grid)
-
-        full_grid = torch.cat(grids, dim=0)
-        full_inv_grid = torch.cat(inv_grids, dim=0)
-
-        zoomed_images = [
-            F.grid_sample(img, full_grid, mode="bilinear", padding_mode="border", align_corners=False)
-            for img in images
-        ]
-        return zoomed_images, full_inv_grid, coarse_logits
+    def forward(self, cine_feat: torch.Tensor, target_feat: torch.Tensor) -> torch.Tensor:
+        mask = self.gate_net(cine_feat)
+        return target_feat * mask
 
 
 class DeformableCrossModalAlignment(nn.Module):
@@ -193,9 +128,8 @@ class M2PlusPlusOutput(tuple):
         cls,
         canonical_logits: torch.Tensor,
         hierarchical_dict: dict[str, torch.Tensor] | None = None,
-        coarse_logits: torch.Tensor | None = None,
     ):
-        return super().__new__(cls, (canonical_logits, hierarchical_dict, coarse_logits))
+        return super().__new__(cls, (canonical_logits, hierarchical_dict))
 
     @property
     def logits(self) -> torch.Tensor:
@@ -204,10 +138,6 @@ class M2PlusPlusOutput(tuple):
     @property
     def hierarchical(self) -> dict[str, torch.Tensor] | None:
         return self[1]
-
-    @property
-    def coarse_logits(self) -> torch.Tensor | None:
-        return self[2]
 
     @property
     def shape(self) -> torch.Size:
@@ -225,7 +155,5 @@ class M2PlusPlusOutput(tuple):
                 return self[0]
             elif item in ("hierarchical", "hierarchical_dict"):
                 return self[1]
-            elif item == "coarse_logits":
-                return self[2]
             raise KeyError(f"Invalid M2PlusPlusOutput key {item!r}")
         return super().__getitem__(item)

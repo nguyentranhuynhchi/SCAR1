@@ -1,4 +1,4 @@
-"""M2-Plus-Plus Network Architecture (Dynamic ROI Zoom-in & Hierarchical Decoupled Heads)."""
+"""M2-Plus-Plus Network Architecture (Anatomy Mask Gating & Hierarchical Decoupled Heads)."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -8,20 +8,19 @@ from typing import Any
 from ml_collections import ConfigDict
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from training.models.cmspa_net import CMSPANet, get_config
 from training.models.modules.m2_pro import AGSA_Block, DecoupledBottleneckFusion
 from training.models.modules.m2_plus_plus import (
     DeformableCrossModalAlignment,
-    DynamicROIExtractor,
+    SoftMyoGate,
     HierarchicalDecoupledHeads,
     M2PlusPlusOutput,
 )
 
 
 class M2PlusPlusNet(CMSPANet):
-    """M2-Plus-Plus: Dynamic ROI Zoom-in & Hierarchical Residual Decoupled Architecture."""
+    """M2-Plus-Plus: Anatomy Mask Gating & Hierarchical Residual Decoupled Architecture."""
 
     def __init__(
         self,
@@ -62,12 +61,13 @@ class M2PlusPlusNet(CMSPANet):
         channels = 16 * width
         expected_skips = [8 * width, 4 * width, width]
 
-        # 1. Dynamic ROI Zoom-in Stage
-        self.roi_extractor = DynamicROIExtractor(in_channels=width, margin=0.20)
-
-        # 2. Deformable Cross-Modal Alignments at Skip Levels
+        # 1. Deformable Cross-Modal Alignments at Skip Levels
         self.align_psir = nn.ModuleList([DeformableCrossModalAlignment(c) for c in expected_skips[:self.config.n_skip]])
         self.align_t2w = nn.ModuleList([DeformableCrossModalAlignment(c) for c in expected_skips[:self.config.n_skip]])
+
+        # 2. Soft Anatomy Gating (Use CINE to mask out non-cardiac noise in LGE/T2w)
+        self.gate_psir = nn.ModuleList([SoftMyoGate(c) for c in expected_skips[:self.config.n_skip]])
+        self.gate_t2w = nn.ModuleList([SoftMyoGate(c) for c in expected_skips[:self.config.n_skip]])
 
         # 3. Decoupled Bottleneck Fusion
         heads = self.config.get("cross_attention_heads", 8)
@@ -105,20 +105,27 @@ class M2PlusPlusNet(CMSPANet):
         self._validate_inputs(cine, psir, t2w)
         orig_images = [img.repeat(1, 3, 1, 1) if img.shape[1] == 1 else img for img in (cine, psir, t2w)]
 
-        # --- Stage 1: Coarse Myocardium Localization ---
-        _, cine_stem_skips = self.transformer1(orig_images[0])
-        zoomed_images, inv_grid, coarse_logits = self.roi_extractor(cine_stem_skips[2], orig_images)
+        # --- Stage 1: Feature Extraction ---
+        cine_f, cine_skips = self.transformer1(orig_images[0])
+        psir_f, psir_skips = self.transformer2(orig_images[1])
+        t2w_f, t2w_skips = self.transformer3(orig_images[2])
 
-        # --- Stage 2: Fine-Grained Zoomed Pathology Segmentation ---
-        cine_f, cine_skips = self.transformer1(zoomed_images[0])
-        psir_f, psir_skips = self.transformer2(zoomed_images[1])
-        t2w_f, t2w_skips = self.transformer3(zoomed_images[2])
+        # --- Stage 2: Spatial Alignment & Anatomy Gating ---
+        aligned_psir_skips = []
+        aligned_t2w_skips = []
+        for i in range(self.config.n_skip):
+            # Deformable alignment
+            a_psir = self.align_psir[i](cine_skips[i], psir_skips[i])
+            a_t2w = self.align_t2w[i](cine_skips[i], t2w_skips[i])
+            
+            # Anatomy Gating
+            g_psir = self.gate_psir[i](cine_skips[i], a_psir)
+            g_t2w = self.gate_t2w[i](cine_skips[i], a_t2w)
 
-        # Deformable alignment
-        aligned_psir_skips = [align(cine_skips[i], psir_skips[i]) for i, align in enumerate(self.align_psir)]
-        aligned_t2w_skips = [align(cine_skips[i], t2w_skips[i]) for i, align in enumerate(self.align_t2w)]
+            aligned_psir_skips.append(g_psir)
+            aligned_t2w_skips.append(g_t2w)
 
-        # Bottleneck Decoupled Fusion
+        # --- Stage 3: Bottleneck Decoupled Fusion ---
         fused_bottleneck = self.cross_fusion(
             self.sspanet_cine(cine_f),
             self.sspanet_psir(psir_f),
@@ -138,14 +145,9 @@ class M2PlusPlusNet(CMSPANet):
             dec_out = block(dec_out, skip)
 
         # Hierarchical output
-        zoomed_logits, hier_dict = self.hierarchical_heads(dec_out)
+        canonical_logits, hier_dict = self.hierarchical_heads(dec_out)
 
-        # Reverse coordinate transform (Unzoom to original patient space)
-        final_canonical_logits = F.grid_sample(
-            zoomed_logits, inv_grid, mode="bilinear", padding_mode="zeros", align_corners=False
-        )
-
-        output = M2PlusPlusOutput(final_canonical_logits, hier_dict, coarse_logits)
+        output = M2PlusPlusOutput(canonical_logits, hier_dict)
         if return_aux is None:
-            return output if self.training else final_canonical_logits
-        return output if return_aux else final_canonical_logits
+            return output if self.training else canonical_logits
+        return output if return_aux else canonical_logits
