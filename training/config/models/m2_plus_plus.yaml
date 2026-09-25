@@ -4,10 +4,11 @@ model:
   ablation: M2-PLUS-PLUS
 
 train:
+  batch_size: 16
   lr: 0.0003
   clip_grad: 1.0
   patience: 35
 
 loss:
-  ce_weight: 1.0
-  dice_weight: 1.0
+  ce_weight: 0.5
+  dice_weight: 0.5
