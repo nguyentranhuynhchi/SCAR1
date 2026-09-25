@@ -219,6 +219,8 @@ def main(argv=None):
     config.n_classes = 4
     if "architecture" in section:
         config.architecture = section["architecture"]
+    elif args.ablation.upper() in ("M2-PLUS-PLUS", "M2_PLUS_PLUS", "M2++"):
+        config.architecture = "m2_plus_plus"
     elif args.ablation.upper() in ("M2-PRO", "M2_PRO"):
         config.architecture = "m2_pro"
     torch.set_num_threads(args.cpu_threads)
