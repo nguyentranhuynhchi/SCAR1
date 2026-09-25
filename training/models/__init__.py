@@ -33,8 +33,13 @@ from training.models.modules.m2_pro import (
     M2ProOutput,
     SoftMyoGate,
 )
+from training.models.m2_plus_plus import M2PlusPlusNet
+from training.models.modules.m2_plus_plus import M2PlusPlusOutput
 
 MODEL_REGISTRY: dict[str, Callable[..., nn.Module]] = {
+    "m2_plus_plus": M2PlusPlusNet,
+    "m2_plusplus": M2PlusPlusNet,
+    "m2++": M2PlusPlusNet,
     "m2_pro": M2ProNet,
     "m2_pro_net": M2ProNet,
     "m2pro": M2ProNet,

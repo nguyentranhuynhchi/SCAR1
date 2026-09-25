@@ -1,15 +1,18 @@
 """Loss functions for segmentation training."""
 from training.loss.losses import DiceLoss, SegmentationLoss
 from training.loss.m2_pro_loss import M2ProLoss, present_dice
+from training.loss.m2_plus_plus_loss import M2PlusPlusLoss
 
 
 def build_loss(loss_name="ce_dice", **kwargs):
-    """Build the M0-M3 compound loss, returning loss and logging components."""
+    """Build the compound loss, returning loss and logging components."""
     normalized = loss_name.lower().replace("-", "_")
+    if normalized in {"m2_plus_plus", "m2_plus_plus_loss", "m2++", "m2plusplus"}:
+        return M2PlusPlusLoss(**kwargs)
     if normalized in {"m2_pro", "m2_pro_loss", "m2pro"}:
         return M2ProLoss(**kwargs)
     if normalized not in {"ce_dice", "segmentation", "segmentation_loss"}:
-        raise ValueError(f"Unknown loss {loss_name!r}; expected 'ce_dice' or 'm2_pro_loss'.")
+        raise ValueError(f"Unknown loss {loss_name!r}; expected 'ce_dice', 'm2_pro_loss', or 'm2_plus_plus_loss'.")
     if "num_classes" in kwargs:
         classes = kwargs.pop("num_classes")
         if "n_classes" in kwargs and kwargs["n_classes"] != classes:
@@ -22,6 +25,7 @@ __all__ = [
     "DiceLoss",
     "SegmentationLoss",
     "M2ProLoss",
+    "M2PlusPlusLoss",
     "present_dice",
     "build_loss",
 ]

@@ -28,6 +28,7 @@ from training.dataset.myops_dataset import (
 from training.loss.losses import SegmentationLoss
 from training.loss.dpf_loss import DPFLoss
 from training.loss.m2_pro_loss import M2ProLoss
+from training.loss.m2_plus_plus_loss import M2PlusPlusLoss
 from training.metrics.confusion_meter import ConfusionMeter
 from training.dataset.sampler import build_rare_class_sampler
 from training.predict import predict_volume
@@ -432,9 +433,11 @@ def trainer_Myops(args, model, snapshot_path):
         split_dir, "val_vol", label_order=args.label_order,
     )
     model.to(device)
-    arch = str(model.config.get("architecture", "")).lower()
+        arch = str(model.config.get("architecture", "")).lower()
     ablation = str(getattr(args, "ablation", model.config.get("ablation", ""))).upper()
-    if arch == "m3_dpf":
+    if arch in ("m2_plus_plus", "m2_plusplus", "m2++") or ablation in ("M2-PLUS-PLUS", "M2++"):
+        loss_class = M2PlusPlusLoss
+    elif arch == "m3_dpf":
         loss_class = DPFLoss
     elif arch in ("m2_pro", "m2_pro_net", "m2pro") or ablation == "M2-PRO":
         loss_class = M2ProLoss

@@ -67,7 +67,7 @@ def build_parser():
     parser.add_argument("--foreground-boost", type=float, default=1.3)
     parser.add_argument(
         "--ablation",
-        choices=["M0", "M1", "M2", "M3", "M2-Plus", "M2-PLUS", "M2-Pro", "M2-PRO"],
+        choices=["M0", "M1", "M2", "M3", "M2-Plus", "M2-PLUS", "M2-Pro", "M2-PRO", "M2-Plus-Plus", "M2-PLUS-PLUS", "M2++"],
         default="M3",
     )
     parser.add_argument("--epochs", "--max_epochs", dest="max_epochs", type=int, default=300)

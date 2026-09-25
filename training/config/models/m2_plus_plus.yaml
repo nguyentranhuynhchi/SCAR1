@@ -1,0 +1,14 @@
+model:
+  model_name: M2-Plus-Plus
+  ablation: M2-PLUS-PLUS
+  architecture: m2_plus_plus
+  vit_name: R50-ViT-B_16
+  n_skip: 3
+  vit_patches_size: 16
+  cross_attention_heads: 8
+  roi_margin: 0.20
+  base_lr: 0.0003
+  batch_size: 16
+  max_epochs: 300
+  weight_decay: 0.0001
+  loss_name: m2_plus_plus_loss
